@@ -1,0 +1,373 @@
+---
+title: "Infractions LCB-FT"
+subtitle: "Revue de la performance, `dplyr` contre `base`"
+description: "Je souhaite traiter les données de manières différentes. J'ai trop pris mes aises avec le `tidyverse`, je souhaite dépasser cette pratique car je pense pouvoir être plus efficace, autrement."
+date: 2023-04-23
+lang: fr
+toc: true
+toc-depth: 4
+format: 
+  html:
+    # theme: 
+    #   light: flatly
+    #   dark: darkly
+    code-link: true
+    code-tools: true
+    code-overflow: wrap
+    df-print: kable
+    highlight-style: a11y
+execute: 
+  eval: false
+  message: false
+  warning: false
+reference-location: margin
+citation-location: margin
+---
+
+## Contexte
+
+Dans le cadre du suivi de cohorte des affaires de lutte contre le blanchiment des capitaux et le financement du terrorisme (LCB-FT), je dois récupérer les affaires dont les infractions à l'enregistrement (à la saisine du parquet) sont dans le champ LCB-FT. Le Pepp a envoyé un fichier de natinfs que je trouve indigeste et pas pratique à manipuler quand je fais des jointures sur SASEG : pour répondre à mes besoins, je l'ai donc nettoyé à partir de R.
+
+J'ai l'habitude d'utiliser les fonctions du `tidyverse` pour manipuler les données. Le `tidyverse` (et `dplyr` plus particulièrement) est simple à comprendre, c'est descriptif, c'est facile de visualiser les modifications qu'on fait puisque les fonctions s'enchaînent avec le pipe (` |> ` anciennement `%>%`). Je n'ai pas besoin de faire des boucles, on a des fonctions toutes prêtes pour appliquer des modifications conditionnelles, comme `across()`, ou les `map()` de `purr`. 
+
+De plus, la syntaxe `dplyr` est semblable à la syntaxe SQL, ce qui m'a permis de prendre mes fonctions rapidement malgré ma méconnaissance de SAS et de SQL à mon arrivée. 
+
+Toutefois, je commence à comprendre que ces fonctions ne sont pas les plus performantes pour les bases de données volumineuses^[Ce qui est le cas à la SDSE, puisqu'on utilise des données administratives. Cassiopée est massif.]. Le `tidyverse` est également très bavard, ce que je prends toujours en grippe. De ce que j'ai lu, c'est aussi plus instable car il s'agit d'un regroupement de packages qui s'appuient les uns sur les autres. C'est ainsi que j'ai découvert les bases de la manipulation des données avec `data.table`. Je souhaite aussi maintenir mes connaissances sur le `R` de base.
+
+::: {.callout-warning}
+Je mentionne le package `data.table`, qui a l'air pas mal et qui est présenté comme la meilleure alternative pour les données volumineuses. J'ai commencé à lire la docu et des comparaisons entre ça et le `tidyverse`, je comprends le principe mais je n'arrive pas à appliquer/m'imaginer comment faire des trucs itératifs, comme "modifier le nom de toutes les colonnes avec `janitor::clean_names()`", ou faire un `rowSums`.
+
+Je me concentre donc plutôt sur le `base R`, surtout que je lis [des diapos de Martin Chevalier](https://teaching.slmc.fr/perf/presentation_handout.pdf) dessus^[Avec des [exercices](https://teaching.slmc.fr/perf/).].
+:::
+
+## Objectifs
+
+* Reproduire le code que je fais d'habitude en `dplyr`, en `base`.
+* Comparer la performance entre les deux manières. Pour moi, la performance se repose sur la rapidité et la propreté du code. 
+* Expliquer mon script, pour ne pas oublier ce que j'ai fait !
+* Utiliser [quarto](https://quarto.org/) :)
+
+## Le code
+
+### Appeler les packages
+
+```{r}
+#| label: setup
+#| eval: true
+#| message: false
+
+library(tidyverse)
+library(data.table)
+library(microbenchmark)
+```
+
+### Importer les données
+
+Il s'agit donc du fichier natinfs du Pepp qui contient toutes les infractions existantes, et qui les qualifient avec des variables dichotomiques en "oui/non" si elles appartiennent à un ou plusieurs groupes du contentieux LCB-FT.
+
+::: {.callout-note collapse="true" title="Les contentieux LCB-FT"}
+Les groupes sont les suivants :
+
+* Blanchiment,
+* Trafic de stupéfiants,
+* Fraude fiscale, sociale ou douanière,
+* Vol et escroquerie,
+* Traite des êtres humains,
+* Atteinte à la probité,
+* Recel,
+* Non-justification des ressources,
+* Financement du terrorisme.
+:::
+
+Le fichier de base contient des variables sur la NATAFF, les textes réprimants, les encourus, etc. J'ai retiré tout ça du fichier Excel que j'importe dans ma session R. Je mets les noms de variables en minuscule pour faciliter les manips, d'un côté avec `stringr::str_to_lower()` et de l'autre avec `base::tolower()`, R étant sensible à la casse tandis que SAS/SQL ne l'est pas.
+
+::: {layout-ncol="2"}
+#### `dplyr`
+```{r}
+#| label: data-dplyr
+
+n <- readxl::read_xlsx("natinf.xlsx") |> 
+  rename_with(
+    ~str_to_lower(.), 
+    everything()
+    )
+```
+
+
+#### `base`
+```{r}
+#| label: data-base
+#| eval: true
+
+n <- readxl::read_xlsx("natinf.xlsx") 
+names(n) <- tolower(names(n)) 
+```
+:::
+
+La différence de temps d'exécution entre les deux manières est négligeable, `base` peut même être plus lent.
+
+Je préfère la syntaxe d'importation avec `dplyr`, quoique je n'utilise pas une de ses fonctions d'importation du `tidyverse` comme `read_csv()`.
+
+```{r}
+#| eval: true
+import_base <- function() {
+  n <- readxl::read_xlsx("natinf.xlsx") 
+  names(n) <- tolower(names(n)) 
+}
+
+summary(microbenchmark(
+  times = 50L,
+  import_dplyr = readxl::read_xlsx("natinf.xlsx") |> 
+  rename_with(
+    ~str_to_lower(.), 
+    everything()
+    ),
+  import_base = import_base()
+))
+```
+
+::: {.callout-tip title="Importation - à l'avenir"}
+Vérifier qu'il n'y a pas une option de nettoyage de nom directement dans une fonction.
+:::
+
+### Quelques statistiques descriptives
+
+#### Sur la table et ses variables
+
+Mes commandes de bases pour une vérification rapide de l'objet.
+
+```{r}
+#| label: stat-desc
+
+# info table
+class(n) # type de table
+names(n) # noms des colonnes de la table
+dim(n) # nombre de lignes et de colonnes
+```
+
+Pour déterminer le nombre de valeurs distinctes par variable et le type de chaque variable.
+
+::: {layout-ncol="2"}
+##### `dplyr`
+```{r}
+n |> map_dbl(n_distinct)
+n |> map_chr(class)
+```
+
+##### `base`
+```{r}
+sapply(n, n_distinct)
+sapply(n, class)
+```
+:::
+
+L'analyse de performance lance ces quatre commandes 50 fois : elle montre que les fonctions de base sont plus rapides, notamment pour déterminer le type de variable. Je suspecte que le faible écart pour `n_distinct` s'explique par le fait qu'il s'agit d'une fonction de `dplyr` que j'utilise dans les deux cas. 
+
+La documentation de la fonction (`dplyr::n_distinct()`) indique d'ailleurs qu'elle serait plus rapide que la manipulation en `base`, avec la commande `nrow(unique(data.frame(...)))`, je ne sais donc pas s'il existe une meilleure alternative.
+
+Je n'ai pas de préférence entre les deux, ce sont des commandes simples. `sapply` présente tout de même l'avantage de ne pas changer de nom selon l'entrée/sortie de données, concept que j'ai toujours du mal à saisir avec les fonctions `purrr::map()`.
+
+```{r}
+#| eval: true
+
+summary(microbenchmark(
+  times = 50L,
+  dplyr_nd = n |> map_dbl(n_distinct),
+  base_nd  = sapply(n, n_distinct),
+  dplyr_class = n |> map_chr(class),
+  base_class  = sapply(n, class)
+))
+```
+
+::: {.callout-tip title="La prochaine fois"}
+Créer une fonction qui regroupe directement toutes mes commandes de base ? Ça risque d'impliquer la création d'un package, à méditer.
+:::
+
+#### Sur le contenu des variables
+
+Pour obtenir le nombre d'infractions par type de contentieux/d'infractions sous-jacentes.
+
+::: {layout-ncol="2"}
+##### `dplyr`
+```{r}
+n |>  
+  select(-natinf) |> 
+  map(~count(data.frame(x = .x), x)) 
+  # ou
+n |> select(-natinf) |> map(table)
+```
+
+##### `base`
+```{r}
+sapply(n[-1], table) 
+lapply(n[-1], table) # pour un tableau par colonne
+```
+:::
+
+Ce ne sont pas les commandes les plus complexes, mais on voit clairement la différence de longueur entre les deux. Avec `dplyr`, je dois bien spécifier que je ne veux pas avoir de tableau pour la variable `natinf` en l'enlevant temporairement du jeu de données, tandis qu'en base, je peux simplement indexé les données^[Pour rappel, `df[i,j]` pour `i` = les lignes et `j` = les colonnes.] en retirant la première colonne, qui correspond à celles des natinfs.
+
+La première méthode avec `dplyr`, inspirée de mon habitude de faire `df |> count(x)` se débrouille le moins bien.
+
+Si ce sont des variables qui ont les mêmes modalités, je vois l'intérêt d'utiliser `sapply()` en particulier, puisque tout est rassemblé dans une matrice avec les modalités en ligne (oui/non) et les contentieux en colonne.
+
+```{r}
+#| eval: true
+
+summary(microbenchmark(
+  times = 50L,
+  dplyr_1 = n |>  select(-natinf) |> map(~count(data.frame(x = .x), x)),
+  dplyr_2 = n |> select(-natinf) |> map(table),
+  base = sapply(n[-1], table)
+))
+
+```
+
+
+### Nettoyage et recodage
+
+J'ai les informations qu'il me faut sur la base inchangée, maintenant je la transforme pour l'exportation finale et l'importation sur SASEG.
+
+Je change les modalités de groupes, initialement en oui/non, pour avoir des variables binaires.
+
+```{r}
+#| eval: true
+# on change les chaines de caractères "oui/non" en binaire 0/1
+n_rec <- n |> 
+  mutate(
+    across(
+      where(is.character),
+      ~ case_when(. == "oui" ~ 1, TRUE ~ 0)
+      )
+    )
+```
+
+::: {.callout-important}
+Trouver comment faire ça en `base` !!!
+:::
+
+Je vérifie que les effectifs sont les mêmes que pré-recodage. Maintenant que ce sont des variables binaires, je peux simplement faire la somme des colonnes pour avoir le nombre d'infractions de chaque groupe.
+
+::: {layout-ncol="2"}
+#### `dplyr`
+```{r}
+n_rec |> select(-natinf) |> map(table)
+n_rec |> select(-natinf) |> map_dbl(sum)
+
+  # ou :)
+
+n_rec |> 
+  summarise(across(stup:fiter, sum)) |> 
+  pivot_longer(
+    everything(),
+    names_to = "contentieux",
+    values_to = "nb_inf"
+    )
+```
+
+#### `base`
+```{r}
+# ou encore
+sapply(n_rec[-1], sum) # ...nettement moins bavard...
+```
+:::
+
+Je veux maintenant faire la somme **par ligne** (donc par infraction) des contentieux, pour voir si certaines infractions appartiennent à plus d'un groupe LCB-FT. 
+
+J'ai d'abord utilisé la fonction `dplyr::c_across` pour faire cette opération, après la commande `rowwise()` qui agit un peu comme `group_by` (d'où la nécessité de dégrouper à la fin, sinon toutes les opérations qui suivent se feront par ligne). Ça fonctionne, mais le temps d'exécution est énorme.
+
+La solution (comme prônée sur [cette vignette](https://dplyr.tidyverse.org/articles/rowwise.html) du package) est plutôt d'utiliser une fonction déjà programmée qui fait exactement ce que je veux, de base. C'est le cas de `base::rowSums()` que j'ai donc fait passer dans `mutate`, en spécifiant que je ne voulais pas prendre en compte la variable de natinf.
+
+::: {.panel-tabset}
+#### Seconde tentative - rapide
+```{r}
+#| eval: true
+
+# infractions qui appartiendraient à plusieurs groupes de sous-jacent?
+n_rec <- n_rec |> mutate(n_sj = rowSums(pick(-natinf)))
+```
+
+#### Première tentative - lent 
+```{r}
+n_rec <- n_rec %>%
+  rowwise() %>% 
+  mutate(n_sj = sum(c_across(stup:fiter))) %>% 
+  ungroup
+  # très lent
+```
+:::
+
+::: {layout-ncol="2"}
+#### `dplyr`
+```{r}
+n_rec |> 
+  rowwise() |> 
+  mutate(n_sj = sum(c_across(stup:fiter))) |> 
+  count(n_sj) # LENT!
+
+# ou plutôt
+n_rec |> 
+  mutate(n_sj=rowSums(pick(-natinf))) |> 
+  count(n_sj)
+```
+
+#### `base`
+```{r}
+table(rowSums(n_rec[-1]))
+```
+:::
+
+```{r}
+# quelle est cette natinf qui appartient à trois groupes?
+n_rec[n_rec$n_sj==3,]
+n_rec[rowSums(n_rec[-1])==3,][1]
+  # 20307: REALISATION D'UNE OPERATION FINANCIERE ENTRE LA FRANCE ET L'ETRANGER SUR DES FONDS PROVENANT D'INFRACTION A LA LEGISLATION SUR LES STUPEFIANTS : BLANCHIMENT DOUANIER
+  # stup, ffsd, blanchiment
+
+# combien d'infractions distinctes qui sont bien dans le champ LCBFT?
+nrow(n_rec[n_rec$n_sj>0,]) # 1728
+
+  # en data.table - clairement moins rapide
+as.data.table(n_rec)[n_sj>0,.N]
+
+# infractions BLANCHIMENT 
+nrow(n_rec[n_rec$blanchiment==1,]) # 75 de blanchiment
+nrow(n_rec[n_rec$blanchiment==1 & n_rec$n_sj==1,]) # 27 caractérisées comme QUE du blanchiment
+```
+
+::: {layout-ncol="2"}
+#### `dplyr`
+```{r}
+# contentieux et uniquement ce contentieux
+n_rec %>% 
+  filter(n_sj==1) %>% 
+  summarise(across(stup:fiter,sum)) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "contentieux",
+    values_to = "nb_inf"
+    )
+```
+
+#### `base`
+```{r}
+sapply(n_rec[
+  n_rec$n_sj == 1, 
+  -c(1,ncol(n_rec))
+],sum)
+```
+:::
+
+```{r}
+#| eval: true
+
+summary(microbenchmark(
+  times = 50L,
+  dplyr = n_rec |>  
+    filter(n_sj == 1) |> 
+    summarise(across(stup:fiter,sum)) |>  
+    pivot_longer(everything(), names_to = "contentieux", values_to = "nb_inf"),
+  base = sapply(n_rec[n_rec$n_sj == 1, -c(1,ncol(n_rec))], sum)
+))
+```
+
+## Pistes d'amélioration
