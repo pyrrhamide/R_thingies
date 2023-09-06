@@ -56,3 +56,14 @@ constr_win <- formule_un$results[position == "1", .N, constructor_id]
 
 merge(ecuries, constr_win)[, -c('url')][order(-N)][1:10]
 # FERRARI!!!!
+
+# plus grand écart entre les wins, par écurie
+courses <- formule_un$races[, .(race_id, year, circuit_id, date)]
+
+constr_win_race <- merge(courses, 
+      formule_un$results[position == "1", .(race_id, constructor_id)]
+      )
+
+constr_win_race[, nb_win := rowid(date), constructor_id][nb_win > 1]
+
+formula_un$results[position == "1"][m]
