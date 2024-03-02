@@ -74,6 +74,10 @@ peak_positions <- moved_row_tib |>
 
 peak_positions
 
+peak_positions |> 
+  ggplot(aes(x = country, y = peak_position, colour = title)) +
+  geom_point()
+
 # extracting the sales ----
 moved_row_tib |> select(title, sales_a)
 
