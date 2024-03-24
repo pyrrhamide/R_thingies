@@ -1,0 +1,241 @@
+---
+title: "bar chart v dot plot"
+date: 2024-03-24
+format: 
+  html:
+    df-print: kable
+execute:
+  message: false
+  warning: false
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+Tonight, on est tombé sur les vidéos ggplot d'Albert Rapp (ouhla, Quarto coupe les lignes automatiquement quand elles atteignent le nombre max de caractères -- ah, c'était parce que "Outline" en haut à droite était sélectionné) et on a décidé unilatéralement d'écrire son code sur "Bar chart v dot plot"
+
+::: {.callout-note appearance="simple"}
+Pour définir le comportement par défaut des morceaux de code, c'est plus dans un chunk au début mais dans l'en-tête. Tout est chamboulé.
+:::
+
+[Lien de la vidéo](https://youtu.be/EwtzFt5Gb4w?si=ABPRzX_o1a_OlQAo)
+
+ooooh on peut intégrer direct la vidéo dans le fichier
+
+{{< video https://www.youtube.com/embed/EwtzFt5Gb4w?si=HzDO3TPahF6FNqcQ >}}
+
+[Lien du poteau explicatif](https://albert-rapp.de/posts/ggplot2-tips/23_dot_plot_alternative/23_dot_plot_alternative)
+
+Pour une fois, je fais ça sur Quarto plutôt que sur un script normal, juste pour changer un peu :)
+
+On commence, comme d'hab, par les packages :
+
+```{r}
+#| label: setup 
+
+
+library(tidyverse)
+library(ggtext) # pour enrichir la panoplie de modif de texte dans le graphique
+library(patchwork) # pour rassembler plusieurs ggplot en une seule image
+library(kableExtra)
+```
+
+Ensuite, le faux dataset :
+
+```{r}
+#| label: faux-dat
+
+set.seed(345345) # aléa pareil qu'AR, hop
+faux_dat <- tibble(
+  reason_for_return = c(
+    "Wrong address",
+    "Wrong item",
+    "Damaged",
+    "Unhappy with the product",
+    "Other"
+  ),
+  returned_items = rpois(5, 100) # ooh une fonction pour creer des entiers!
+)
+
+faux_dat
+```
+
+D'abord, on génère un histogramme basique :
+
+```{r}
+#| label : histo-classique 
+
+
+faux_dat |> 
+  ggplot(aes(x = returned_items, y = reason_for_return)) +
+  geom_col(fill = "dodgerblue4")
+```
+
+(je fais vraiment tout comme AR) On embellie le graphique en :
+
+1.  Réordonnant les catégories par ordre croissant d'éléments
+2.  Petit `theme_minimal()` + on augmente la taille de la police
+3.  Un titre !
+4.  On enlève les titres des axes
+5.  On enlève le "x-axis expansion" pour rapprocher les libellés des barres + autres petites modifs
+
+```{r}
+#| label : histo-ameliore
+
+
+sorted_dat <- faux_dat |> 
+  mutate(reason_for_return = fct_reorder(
+    reason_for_return, 
+    returned_items)
+    )
+
+bar_chart <- sorted_dat |> 
+  ggplot(aes(x = returned_items, y = reason_for_return)) +
+  geom_col(fill = 'dodgerblue4') +
+  theme_minimal(
+    # base_size = 16
+  ) +
+  labs(
+    title = "Number of returned items by return reason",
+    x = element_blank(),
+    y = element_blank()
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title.position = "plot" # on aligne le titre sur axe gauche des libellés 
+  )
+
+bar_chart
+```
+
+Top. Maintenant, on fait la même chose, mais avec des points! Ca se fait en remplaçant `geom_col` par `geom_point`, le reste est pareil.
+
+```{r}
+#| label: dot-chart-basique 
+
+sorted_dat |> 
+  ggplot(
+    aes(
+      y = reason_for_return, 
+      x = returned_items
+    )
+  ) +
+  geom_point(
+    color = 'dodgerblue4',
+    size = 8
+  ) +
+  theme_minimal(
+    base_size = 16
+  ) +
+  labs(
+    title = "Number of returned items by return reason",
+    x = element_blank(),
+    y =element_blank()
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title.position = 'plot'
+  )
+```
+
+En effet, c'est fastoche. AR suggère d'améliorer ce graphique en collant les libellés au plus près des points avec `geom_text`, et en épurant le reste.
+
+```{r}
+sorted_dat |> 
+  ggplot(
+    aes(
+      y = reason_for_return, 
+      x = returned_items
+    )
+  ) +
+  geom_point(
+    color = 'dodgerblue4',
+    size = 8
+  ) +
+  geom_text(
+    aes(label = reason_for_return),
+    hjust = 1, # déplacer sur gauche 
+    nudge_x = -0.55, # un peu plus
+    size = 5,
+    fontface = "bold"
+  ) +
+  theme_minimal(
+    base_size = 16
+  ) +
+  labs(
+    title = "Number of returned items by return reason",
+    x = element_blank(),
+    y =element_blank()
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title.position = 'plot',
+    axis.text.y = element_blank()
+  )
+```
+
+Il est jamais entièrement satisfait : les axes de l'abscisse coupent quelques uns des labels, il veut donc ajouter un fond blanc à ces derniers, avec `ggtext::geom_richtext` :
+
+```{r}
+dot_chart <- sorted_dat |> 
+  ggplot(
+    aes(
+      y = reason_for_return, 
+      x = returned_items
+    )
+  ) +
+  geom_point(
+    color = 'dodgerblue4',
+    size = 8
+  ) +
+  ggtext::geom_richtext(
+    aes(label = reason_for_return),
+    hjust = 1, # déplacer sur gauche 
+    nudge_x = -0.55, # un peu plus
+    # size = 5,
+    fontface = "bold",
+    label.colour = NA
+  ) +
+  theme_minimal(
+    # base_size = 16
+  ) +
+  labs(
+    title = "Number of returned items by return reason",
+    x = element_blank(),
+    y =element_blank()
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    plot.title.position = 'plot',
+    axis.text.y = element_blank()
+  )
+
+dot_chart
+```
+
+Petit avant-après
+
+```{r}
+layout <- '
+AAABBB' 
+
+# bar_chart + dot_chart tout seul fait l'affaire
+
+bar_chart + labs(title = element_blank()) +
+  dot_chart + labs(title = element_blank()) +
+  plot_layout(design = layout) 
+```
