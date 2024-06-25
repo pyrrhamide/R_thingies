@@ -91,7 +91,7 @@ sorted_dat <- faux_dat |>
 
 bar_chart <- sorted_dat |> 
   ggplot(aes(x = returned_items, y = reason_for_return)) +
-  geom_col(fill = 'dodgerblue4') +
+  geom_col(fill = thematic::okabe_ito(5)) +
   theme_minimal(
     # base_size = 16
   ) +
@@ -195,13 +195,13 @@ dot_chart <- sorted_dat |>
     )
   ) +
   geom_point(
-    color = 'dodgerblue4',
+    color = thematic::okabe_ito(5),
     size = 8
   ) +
   ggtext::geom_richtext(
     aes(label = reason_for_return),
     hjust = 1, # déplacer sur gauche 
-    nudge_x = -0.55, # un peu plus
+    nudge_x = -1, # un peu plus
     # size = 5,
     fontface = "bold",
     label.colour = NA
@@ -215,7 +215,8 @@ dot_chart <- sorted_dat |>
     y =element_blank()
   ) +
   scale_x_continuous(
-    expand = expansion(mult = c(0, 0.05))
+    expand = expansion(mult = c(0, 0.05)),
+    limits = c(75, 115)
   ) +
   theme(
     panel.grid.major.y = element_blank(),
@@ -238,4 +239,10 @@ AAABBB'
 bar_chart + labs(title = element_blank()) +
   dot_chart + labs(title = element_blank()) +
   plot_layout(design = layout) 
+```
+
+Ou bien (j'arrive pas à mettre correctement en forme, URGH)
+
+```{r}
+bar_chart / dot_chart
 ```
