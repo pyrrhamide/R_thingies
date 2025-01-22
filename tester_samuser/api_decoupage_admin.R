@@ -141,3 +141,38 @@ recherche_commune("01280", code_postal = T)
 recherche_commune("01313")
 
 recherche_commune("97400", code_postal = T)
+
+
+# plus propre
+recherche_commune <- function(code_commune, code_postal = FALSE, nom_commune = FALSE) {
+  
+  geo_api <- "https://geo.api.gouv.fr/communes" |> 
+    request() 
+  
+  if (code_postal) {
+      geo_api_rep <- geo_api |> req_url_query(codePostal = code_commune)
+    } else if (nom_commune) {
+      geo_api_rep <- geo_api |> 
+        req_url_query(
+          nom = code_commune,
+          boost = "population",
+          limit = 6
+          )
+    } else {
+      geo_api_rep <- geo_api |> req_url_path_append(code_commune) 
+    }
+  
+  geo_api_rep <- geo_api_rep |> 
+    req_url_query(
+      fields = c("nom", "code AS code_com_insee", "population"), 
+      .multi = "comma"
+    ) |> 
+    req_perform()
+    
+  geo_api_rep |> 
+    resp_body_json(simplifyVector = TRUE) |> 
+    as_tibble()
+}
+
+recherche_commune("72181")
+recherche_commune("Villiers", nom_commune = T)
